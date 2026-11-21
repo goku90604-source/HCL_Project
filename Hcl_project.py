@@ -3,6 +3,7 @@ import io
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 
 def load_cinema_csv(filename: str = "15_cinema_sales.csv") -> pd.DataFrame:
@@ -139,3 +140,52 @@ print("3.", slots.idxmax(), "is the busiest slot and", slots.idxmin(), "is the q
 print("4. Weekend snack spend is", round(day_snack["Weekend"], 2), "vs", round(day_snack["Weekday"], 2),
       "on weekdays. Offer cheaper combos on weekdays.")
 print("5.", genre["Concession_Spend"].idxmax(), "movies have the highest snack spend. Promote combos with them.")
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Calculate revenue by movie
+movie_revenue = df.groupby("Movie_Title").agg(
+    Ticket_Revenue=("Ticket_Revenue", "sum"),
+    Concession_Revenue=("Concession_Spend", "sum")
+)
+
+# Select the top 10 movies by total revenue
+movie_revenue["Total_Revenue"] = (
+    movie_revenue["Ticket_Revenue"]
+    + movie_revenue["Concession_Revenue"]
+)
+
+top10 = movie_revenue.sort_values(
+    "Total_Revenue", ascending=False
+).head(10)
+
+# Create grouped bar chart
+x = np.arange(len(top10))
+width = 0.35
+
+plt.figure(figsize=(12, 6))
+
+plt.bar(
+    x - width / 2,
+    top10["Ticket_Revenue"],
+    width,
+    label="Ticket Revenue"
+)
+
+plt.bar(
+    x + width / 2,
+    top10["Concession_Revenue"],
+    width,
+    label="Concession Revenue"
+)
+
+plt.title("Top 10 Movies: Ticket vs Concession Revenue")
+plt.xlabel("Movie Title")
+plt.ylabel("Revenue (₹)")
+plt.xticks(x, top10.index, rotation=45, ha="right")
+plt.legend()
+plt.grid(axis="y", linestyle="--", alpha=0.5)
+
+plt.tight_layout()
+plt.show()

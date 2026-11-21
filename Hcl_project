@@ -1,0 +1,141 @@
+# Project 15: Movie Theater Box Office & Concession Analysis
+import io
+from pathlib import Path
+import numpy as np
+import pandas as pd
+
+
+def load_cinema_csv(filename: str = "15_cinema_sales.csv") -> pd.DataFrame:
+    """Load CSV and strip outer quotes per line if the file wraps each row in quotes."""
+    csv_path = Path(filename)
+    if not csv_path.exists() and "__file__" in globals():
+        csv_path = Path(__file__).resolve().parent / filename
+
+    with open(csv_path, "r", encoding="utf-8") as f:
+        lines = [line.rstrip("\r\n") for line in f]
+
+    if lines and lines[0].startswith('"') and lines[0].endswith('"') and "," in lines[0][1:-1]:
+        cleaned_csv = "\n".join(
+            line[1:-1] if (len(line) >= 2 and line.startswith('"') and line.endswith('"')) else line
+            for line in lines
+        )
+        return pd.read_csv(io.StringIO(cleaned_csv))
+
+    return pd.read_csv(csv_path)
+
+
+# ---------- Task 1: Load and inspect ----------
+print("TASK 1: LOAD AND INSPECT")
+df = load_cinema_csv("15_cinema_sales.csv")
+print(df.head())
+print("Shape:", df.shape)
+print(df.dtypes)
+print(df.describe())
+
+# ---------- Task 2: Missing values and duplicates ----------
+print("\nTASK 2: MISSING VALUES AND DUPLICATES")
+print(df.isnull().sum())
+dup_count = df.duplicated(subset="Transaction_ID").sum()
+print("Duplicate Transaction_IDs:", dup_count)
+df = df.drop_duplicates(subset="Transaction_ID").copy()
+print("Shape after removing duplicates:", df.shape)
+
+# ---------- Task 3: Fill missing Concession_Spend ----------
+# I use the median because a few big spenders pull the mean up.
+print("\nTASK 3: CLEAN CONCESSION SPEND")
+df["Snack_Was_Missing"] = df["Concession_Spend"].isnull()
+median_spend = df["Concession_Spend"].median()
+df["Concession_Spend"] = df["Concession_Spend"].fillna(median_spend)
+print("Filled with median:", median_spend)
+print("Missing now:", df["Concession_Spend"].isnull().sum())
+
+# ---------- Task 4: Dates and weekend flag ----------
+print("\nTASK 4: DATES")
+df["Show_Date"] = pd.to_datetime(df["Show_Date"])
+df["Weekday"] = df["Show_Date"].dt.day_name()
+df["Is_Weekend"] = np.where(df["Weekday"].isin(["Saturday", "Sunday"]), 1, 0)
+df["Day_Type"] = np.where(df["Is_Weekend"] == 1, "Weekend", "Weekday")
+print(df[["Show_Date", "Weekday", "Day_Type"]].head())
+
+# ---------- Task 5: Revenue ----------
+print("\nTASK 5: REVENUE")
+df["Ticket_Revenue"] = df["Ticket_Quantity"] * df["Ticket_Price"]
+df["Total_Spend"] = df["Ticket_Revenue"] + df["Concession_Spend"]
+ticket_total = df["Ticket_Revenue"].sum()
+snack_total = df["Concession_Spend"].sum()
+print("Ticket revenue:", ticket_total)
+print("Concession revenue:", snack_total)
+print("Combined revenue:", ticket_total + snack_total)
+
+# ---------- Task 6: Top 10 movies ----------
+print("\nTASK 6: TOP 10 MOVIES")
+movies = df.groupby("Movie_Title")[["Ticket_Quantity", "Ticket_Revenue"]].sum()
+print("By tickets sold:")
+print(movies.sort_values("Ticket_Quantity", ascending=False).head(10))
+print("By ticket revenue:")
+print(movies.sort_values("Ticket_Revenue", ascending=False).head(10))
+
+# ---------- Task 7: Occupancy by screen format ----------
+print("\nTASK 7: OCCUPANCY BY FORMAT")
+print(df.groupby("Screen_Format")["Occupancy_Pct"].mean())
+print(df.groupby("Screen_Format").mean(numeric_only=True))
+
+# ---------- Task 8: Weekday vs weekend ----------
+print("\nTASK 8: WEEKDAY VS WEEKEND")
+print(df.groupby("Day_Type")[["Ticket_Quantity", "Concession_Spend"]].mean())
+print(df.groupby("Day_Type")[["Ticket_Quantity", "Concession_Spend"]].sum())
+
+# ---------- Task 9: Showtime slots ----------
+print("\nTASK 9: SHOWTIME SLOTS")
+print(df.groupby("Showtime_Slot")["Ticket_Quantity"].sum())
+print(df.groupby("Showtime_Slot")["Occupancy_Pct"].mean())
+
+# ---------- Task 10: Attach rate ----------
+print("\nTASK 10: ATTACH RATE")
+with_snack = (df["Concession_Spend"] > 0).sum()
+attach_rate = with_snack / len(df) * 100
+print("Attach rate (%):", round(attach_rate, 2))
+
+# ---------- Task 11: Genre ----------
+print("\nTASK 11: GENRE")
+genre = df.groupby("Genre")[["Ticket_Revenue", "Concession_Spend"]].mean()
+print(genre)
+
+# ---------- Task 12: NumPy stats ----------
+print("\nTASK 12: NUMPY STATS")
+spend = df["Total_Spend"].to_numpy()
+print("Mean:", round(np.mean(spend), 2))
+print("Median:", round(np.median(spend), 2))
+print("Std:", round(np.std(spend), 2))
+
+# ---------- Task 13: IQR outliers ----------
+print("\nTASK 13: LARGE BOOKINGS (IQR)")
+q1 = np.percentile(df["Ticket_Quantity"], 25)
+q3 = np.percentile(df["Ticket_Quantity"], 75)
+iqr = q3 - q1
+upper = q3 + 1.5 * iqr
+print("Q1:", q1, "Q3:", q3, "Upper limit:", upper)
+outliers = df[df["Ticket_Quantity"] > upper]
+print("Unusually large bookings:", len(outliers))
+print(outliers[["Transaction_ID", "Movie_Title", "Ticket_Quantity"]])
+
+# ---------- Task 14: Ticket bands ----------
+print("\nTASK 14: TICKET BANDS")
+bins = [0, 1, 2, 5, 100]
+labels = ["Solo", "Couple", "Small Group", "Large Group"]
+df["Group_Band"] = pd.cut(df["Ticket_Quantity"], bins=bins, labels=labels)
+print(df["Group_Band"].value_counts())
+print(df.groupby("Group_Band", observed=True)["Concession_Spend"].mean())
+
+# ---------- Task 15: Recommendations ----------
+print("\nTASK 15: RECOMMENDATIONS")
+occ = df.groupby("Screen_Format")["Occupancy_Pct"].mean()
+slots = df.groupby("Showtime_Slot")["Ticket_Quantity"].sum()
+day_snack = df.groupby("Day_Type")["Concession_Spend"].mean()
+
+print("1.", occ.idxmax(), "has the highest occupancy. Give it more screens and prime slots.")
+print("2.", occ.idxmin(), "has the lowest occupancy. Reduce its shows or offer discounts.")
+print("3.", slots.idxmax(), "is the busiest slot and", slots.idxmin(), "is the quietest. Promote the quiet slot.")
+print("4. Weekend snack spend is", round(day_snack["Weekend"], 2), "vs", round(day_snack["Weekday"], 2),
+      "on weekdays. Offer cheaper combos on weekdays.")
+print("5.", genre["Concession_Spend"].idxmax(), "movies have the highest snack spend. Promote combos with them.")
